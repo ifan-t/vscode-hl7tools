@@ -181,14 +181,13 @@ export function SendMultipleMessages(Host: string, Port: number, HL7Message: str
 	for (var i = 1; i < split.length; i++) {
 		var newMessage = "MSH" + delimiters.Field + split[i];
 		split[i] = newMessage;
-	}
 
-	// replace any newlines added by the text area with CRs.
-	for (var i = 1; i < split.length; i++) {
+		// replace any newlines added by the text area with CRs.
 		split[i] = split[i].replace(new RegExp('\n', 'g'), String.fromCharCode(0x0d));
 	}
 
 	var client: any;
+
 	//Keep track of message number
 	var j = 1;
 
