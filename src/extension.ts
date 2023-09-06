@@ -12,7 +12,7 @@ import { ExtractAllFields, ExtractReturnCode } from './ExtractFields';
 import { HighlightFields, HighlightFieldReturnCode } from './HighlightField';
 import { DisplaySegmentAsTree } from './FieldTreeView';
 import { MaskAllIdentifiers } from './MaskIdentifiers';
-import { SendMessage } from './SendHl7Message'
+import { SendMessage, SendMultipleMessages } from './SendHl7Message'
 import { StartListener, StopListener } from './TCPListener';
 import { CheckAllFields } from './CheckRequiredFields';
 import { MissingRequiredFieldResult } from './CheckRequiredFieldsResult';
@@ -439,6 +439,98 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	context.subscriptions.push(SendMessageCommand);
+
+	//-------------------------------------------------------------------------------------------
+	// This function sends the message in the active document to a remote host via TCP. The HL7 message is framed using MLLP.
+	var SendMultipleMessagesCommand = vscode.commands.registerCommand('hl7tools.SendMultipleMessages', function () {
+
+		console.log("Sending HL7 message to remote host");
+
+		// get the user defaults for TCP Connection timeout & FavouriteRemoteHosts
+		const tcpConnectionTimeout = preferences.ConnectionTimeOut * 1000;
+
+		var activeEditor = vscode.window.activeTextEditor;
+		if (!activeEditor) {
+			console.log("No document open, nothing to send. Exiting 'hl7tools.SendMessage'");
+			return;
+		}
+
+		// get the HL7 message from the active document. Convert EOL to <CR> only.
+		var currentDoc = activeEditor.document;
+		var hl7Message = currentDoc.getText();
+
+		var delimiters: Delimiter = new Delimiter();
+		delimiters.ParseDelimitersFromMessage(hl7Message);
+
+		var newMessage = "";
+		//		var batchHeaderRegEx: RegExp = new RegExp("(^FHS\\" + delimiters.Field + ")|(^BHS\\" + delimiters.Field + ")|(^BTS\\" + delimiters.Field + ")(^FTS\\" + delimiters.Field + ")", "i");
+		//		var mshRegEx = new RegExp("^MSH\\" + delimiters.Field, "i");
+
+		var mshRegEx: RegExp = new RegExp("^MSH\\" + delimiters.Field, "gim");
+		var split: string[] = hl7Message.split(mshRegEx);
+
+		// If the user is splitting the file into more than 100 new files, warn and provide the opportunity to cancel.
+		// Opening a large number of files could be a drain on system resources. 
+		if (split.length > 100) {
+			var largeFileWarningPromise = vscode.window.showWarningMessage("This will open " + split.length + " new files. This could impact performance. Select 'Close' to cancel, or 'Continue' to proceed.", "Continue");
+			largeFileWarningPromise.then(function (response) {
+				if (response == "Continue") {
+					// loop through all matches, discarding anything before the first match (i.e batch header segments, or empty strings if MSH is the first segment) 
+					for (var i = 1; i < split.length; i++) {
+						// TO DO: remove batch footers            
+						// open the message in a new document, user will be prompted to save on exit
+						var newMessage = "MSH" + delimiters.Field + split[i];
+						Util.CreateNewDocument(newMessage, "hl7");
+					}
+				}
+			});
+		}
+		// if the file is less than 100 messages, proceed with split.
+		else {
+			// loop through all matches, discarding anything before the first match (i.e batch header segments, or empty strings if MSH is the first segment) 
+			for (var i = 1; i < split.length; i++) {
+				// TO DO: remove batch footers            
+				// open the message in a new document, user will be prompted to save on exit
+				var newMessage = "MSH" + delimiters.Field + split[i];
+				split[i] = newMessage;
+			}
+		}
+		// get the EOL character from the current document
+		var endOfLineChar: string = Util.GetEOLCharacter(currentDoc);
+		hl7Message = hl7Message.replace(new RegExp(endOfLineChar, 'g'), String.fromCharCode(0x0d));
+
+		// display the webview panel
+		var thisExtension: vscode.Extension<any> | undefined = vscode.extensions.getExtension('RobHolme.hl7tools');
+		if (thisExtension === undefined) {
+			console.log("The extension 'RobHolme.hl7tools' could no be referenced.")
+			return;
+		}
+		var SendHl7MessageWebView: SendHl7MessagePanel = new SendHl7MessagePanel(thisExtension.extensionUri);
+		if (preferences.SocketEncodingPreference) {
+			SendHl7MessageWebView.encodingPreference = preferences.SocketEncodingPreference;
+		}
+		SendHl7MessageWebView.render(hl7Message);
+		// add any favourites from the user preferences to the webpanel's dropdown list
+		SendHl7MessageWebView.updateFavourites(preferences.FavouriteRemoteHosts);
+
+		// handle messages from the webview
+		SendHl7MessageWebView.panel.webview.onDidReceiveMessage(function (message) {
+			switch (message.command) {
+				case 'sendMessage':
+					SendMultipleMessages(message.host, message.port, message.hl7, tcpConnectionTimeout, message.tls, message.ignoreCertError, message.encoding, SendHl7MessageWebView);
+					return;
+				case 'exit':
+					SendHl7MessageWebView.panel.dispose();
+					return;
+			}
+		},
+			undefined,
+			context.subscriptions
+		);
+	});
+
+	context.subscriptions.push(SendMultipleMessagesCommand);
+
 
 	//-------------------------------------------------------------------------------------------
 	// This function receives messages from a remote host via TCP. Messages displayed in the editor as new documents.
