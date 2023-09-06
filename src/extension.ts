@@ -458,43 +458,6 @@ export function activate(context: vscode.ExtensionContext) {
 		// get the HL7 message from the active document. Convert EOL to <CR> only.
 		var currentDoc = activeEditor.document;
 		var hl7Message = currentDoc.getText();
-
-		var delimiters: Delimiter = new Delimiter();
-		delimiters.ParseDelimitersFromMessage(hl7Message);
-
-		var newMessage = "";
-		//		var batchHeaderRegEx: RegExp = new RegExp("(^FHS\\" + delimiters.Field + ")|(^BHS\\" + delimiters.Field + ")|(^BTS\\" + delimiters.Field + ")(^FTS\\" + delimiters.Field + ")", "i");
-		//		var mshRegEx = new RegExp("^MSH\\" + delimiters.Field, "i");
-
-		var mshRegEx: RegExp = new RegExp("^MSH\\" + delimiters.Field, "gim");
-		var split: string[] = hl7Message.split(mshRegEx);
-
-		// If the user is splitting the file into more than 100 new files, warn and provide the opportunity to cancel.
-		// Opening a large number of files could be a drain on system resources. 
-		if (split.length > 100) {
-			var largeFileWarningPromise = vscode.window.showWarningMessage("This will open " + split.length + " new files. This could impact performance. Select 'Close' to cancel, or 'Continue' to proceed.", "Continue");
-			largeFileWarningPromise.then(function (response) {
-				if (response == "Continue") {
-					// loop through all matches, discarding anything before the first match (i.e batch header segments, or empty strings if MSH is the first segment) 
-					for (var i = 1; i < split.length; i++) {
-						// TO DO: remove batch footers            
-						// open the message in a new document, user will be prompted to save on exit
-						var newMessage = "MSH" + delimiters.Field + split[i];
-						Util.CreateNewDocument(newMessage, "hl7");
-					}
-				}
-			});
-		}
-		// if the file is less than 100 messages, proceed with split.
-		else {
-			// loop through all matches, discarding anything before the first match (i.e batch header segments, or empty strings if MSH is the first segment) 
-			for (var i = 1; i < split.length; i++) {
-				// TO DO: remove batch footers            
-				// open the message in a new document, user will be prompted to save on exit
-				var newMessage = "MSH" + delimiters.Field + split[i];
-				split[i] = newMessage;
-			}
-		}
 		// get the EOL character from the current document
 		var endOfLineChar: string = Util.GetEOLCharacter(currentDoc);
 		hl7Message = hl7Message.replace(new RegExp(endOfLineChar, 'g'), String.fromCharCode(0x0d));
